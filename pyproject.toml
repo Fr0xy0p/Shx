@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "shx"
+version = "0.1.0"
+description = "AI-Assisted Terminal & Shell Command Assistant with AST Safety Guardrails"
+authors = [{ name = "Yuraj" }]
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "typer>=0.12.0",
+    "rich>=13.7.0",
+    "bashlex>=0.18",
+    "pydantic>=2.7.0",
+    "openai>=1.30.0",
+    "google-genai>=0.1.0",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8.0.0",
+]
+
+[project.scripts]
+shx = "shx.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["shx*"]

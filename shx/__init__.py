@@ -1,0 +1,3 @@
+"""shx - AI-Assisted Terminal & Shell Command Assistant"""
+
+__version__ = "0.1.0"
