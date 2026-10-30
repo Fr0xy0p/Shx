@@ -33,5 +33,8 @@ htmlcov/
 
 # Config & local secrets
 .env
+.env.*
 config.local.json
+.config/
+*.spec
 .DS_Store

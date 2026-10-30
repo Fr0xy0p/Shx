@@ -24,10 +24,27 @@
 
 ## Installation
 
+### Option 1: Global Install with `pipx` (Recommended)
+[`pipx`](https://pypa.github.io/pipx/) installs CLI tools in isolated environments while making them globally accessible across your entire system:
+
+```bash
+# Install via PyPI
+pipx install shx-cli
+
+# Or install directly from GitHub
+pipx install git+https://github.com/<your-username>/shx.git
+```
+
+### Option 2: Standard pip Install
+```bash
+pip install shx-cli
+```
+
+### Option 3: Local Development
 ```bash
 # Clone and navigate to workspace
-git clone <repo-url>
-cd CLI_project
+git clone https://github.com/<your-username>/shx.git
+cd shx
 
 # Setup virtual environment
 python3 -m venv .venv
@@ -44,14 +61,23 @@ pip install -e .
 Set your preferred provider and API keys:
 
 ```bash
-# Configure interactively
+# Configure interactively (guided prompt)
 shx config
 
-# Or set provider and keys directly
+# Or configure Groq directly
+shx config --provider groq
+shx config --set-key groq="gsk_your_groq_api_key_here"
+
+# Or configure Google Gemini
 shx config --provider gemini
 shx config --set-key gemini="AIzaSy..."
 
-# Use local models via Ollama
+# Alternatively, export standard environment variables
+export GROQ_API_KEY="gsk_..."
+export GEMINI_API_KEY="AIzaSy..."
+export OPENAI_API_KEY="sk-..."
+
+# Use local models via Ollama (no API key needed)
 shx config --provider ollama
 shx config --ollama-url "http://localhost:11434/v1"
 

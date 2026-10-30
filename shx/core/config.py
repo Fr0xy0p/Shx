@@ -12,7 +12,7 @@ DEFAULT_CONFIG_PATH = DEFAULT_CONFIG_DIR / "config.json"
 DEFAULT_MODELS = {
     "gemini": "gemini-2.5-flash",
     "openai": "gpt-4o-mini",
-    "groq": "llama-3.3-70b-versatile",
+    "groq": "qwen/qwen3.8-27b",
     "ollama": "llama3.2",
 }
 

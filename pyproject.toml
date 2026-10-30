@@ -1,14 +1,32 @@
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "shx"
+name = "shx-cli"
 version = "0.1.0"
 description = "AI-Assisted Terminal & Shell Command Assistant with AST Safety Guardrails"
-authors = [{ name = "Yuraj" }]
 readme = "README.md"
 requires-python = ">=3.10"
+license = "MIT"
+authors = [{ name = "Yuvraj" }]
+keywords = ["cli", "terminal", "ai", "bash", "zsh", "guardrails", "groq", "llm"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: System :: Shells",
+    "Topic :: Utilities",
+]
 dependencies = [
     "typer>=0.12.0",
     "rich>=13.7.0",
@@ -21,6 +39,10 @@ dependencies = [
 [project.optional-dependencies]
 test = [
     "pytest>=8.0.0",
+]
+build = [
+    "build>=1.2.0",
+    "twine>=5.0.0",
 ]
 
 [project.scripts]
