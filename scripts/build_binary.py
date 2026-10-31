@@ -11,9 +11,8 @@ def main():
     cli_entry = root_dir / "shx" / "cli.py"
 
     print("Checking for PyInstaller...")
-    try:
-        import PyInstaller
-    except ImportError:
+    import importlib.util
+    if importlib.util.find_spec("PyInstaller") is None:
         print("Installing pyinstaller...")
         subprocess.check_call([sys.executable, "-m", "pip", "install", "pyinstaller"])
 

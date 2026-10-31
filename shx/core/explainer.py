@@ -1,9 +1,9 @@
 """Cryptic flag dictionary and command explainer engine."""
 
-import re
 import shlex
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 from pydantic import BaseModel
+from shx.core.safety.ast_analyzer import unwrap_command
 
 
 class FlagInfo(BaseModel):
@@ -82,7 +82,11 @@ CRYPTIC_FLAG_DATABASE: Dict[str, Dict[str, Tuple[str, str]]] = {
     },
     "ps": {
         "aux": ("All Processes BSD", "a = all users, u = display user/owner, x = include processes without terminal"),
+        "-aux": ("All Processes BSD", "a = all users, u = display user/owner, x = include processes without terminal"),
         "-ef": ("All Processes System V", "-e = select all processes, -f = full-format listing"),
+        "-a": ("All Users", "Select all processes except session leaders and processes not associated with terminal"),
+        "-u": ("User-Oriented", "Display user-oriented format with CPU/memory stats"),
+        "-x": ("Include Daemon Processes", "Include processes that do not have an attached controlling terminal"),
     },
     "grep": {
         "-i": ("Ignore Case", "Case-insensitive matching"),
@@ -108,48 +112,79 @@ CRYPTIC_FLAG_DATABASE: Dict[str, Dict[str, Tuple[str, str]]] = {
     },
 }
 
+TAR_FLAGS = {"x", "c", "v", "z", "j", "J", "f", "p", "t", "C"}
+
+
+def _command_basename(token: str) -> str:
+    """Extract command name ignoring paths (e.g. /usr/bin/find -> find, \\find -> find)."""
+    cleaned = token.lstrip("\\")
+    return cleaned.split("/")[-1]
+
 
 def explain_local_command(command: str) -> List[FlagInfo]:
-    """Inspect shell command and extract known flags using offline database."""
+    """Inspect shell command and extract known flags using offline database and unwrapping wrappers."""
     results: List[FlagInfo] = []
     clean_cmd = command.strip()
 
     try:
-        tokens = shlex.split(clean_cmd)
+        lexer = shlex.shlex(clean_cmd, posix=True, punctuation_chars=True)
+        segments: List[List[str]] = []
+        current: List[str] = []
+        while True:
+            tok = lexer.get_token()
+            if not tok:
+                if current:
+                    segments.append(current)
+                break
+            if tok in (";", "&&", "||", "|", "&", "\n"):
+                if current:
+                    segments.append(current)
+                    current = []
+            else:
+                current.append(tok)
     except Exception:
-        tokens = clean_cmd.split()
+        segments = [clean_cmd.split()]
 
-    if not tokens:
-        return results
-
-    current_cmd = ""
-    for idx, token in enumerate(tokens):
-        # Detect command boundary (after ;, &&, |, ||)
-        if token in (";", "&&", "||", "|", "&"):
-            current_cmd = ""
+    for segment in segments:
+        if not segment:
             continue
 
-        if not current_cmd:
-            current_cmd = Path_name(token)
-            continue
-
-        # Look up token in current_cmd database
+        raw_cmd = segment[0]
+        args = segment[1:]
+        current_cmd, remaining_args, _ = unwrap_command(raw_cmd, args)
         cmd_db = CRYPTIC_FLAG_DATABASE.get(current_cmd, {})
-        if token in cmd_db:
-            name, desc = cmd_db[token]
-            results.append(FlagInfo(flag=f"{current_cmd} {token}", name=name, description=desc))
-        elif token.startswith("-") and len(token) > 2 and not token.startswith("--"):
-            # Decompose combined flags like `tar -xzvf` or `grep -in`
-            for char in token[1:]:
-                single_flag = f"-{char}"
-                if single_flag in cmd_db:
-                    name, desc = cmd_db[single_flag]
-                    results.append(FlagInfo(flag=f"{current_cmd} {single_flag}", name=name, description=desc))
+        if not cmd_db:
+            continue
 
+        first_arg = True
+        for token in remaining_args:
+            # Handle dash-less tar flags: e.g. `tar xzvf archive.tar.gz`
+            if current_cmd == "tar" and first_arg and not token.startswith("-"):
+                first_arg = False
+                if all(ch in TAR_FLAGS for ch in token):
+                    for char in token:
+                        single_flag = f"-{char}"
+                        if single_flag in cmd_db:
+                            name, desc = cmd_db[single_flag]
+                            results.append(FlagInfo(flag=f"{current_cmd} {single_flag}", name=name, description=desc))
+                    continue
+
+            first_arg = False
+
+            # Direct lookup
+            if token in cmd_db:
+                name, desc = cmd_db[token]
+                results.append(FlagInfo(flag=f"{current_cmd} {token}", name=name, description=desc))
+            elif token.startswith("-") and len(token) > 2 and not token.startswith("--"):
+                # Handle ps -aux special case or decompose combined flags like -xzvf
+                if current_cmd == "ps" and token == "-aux":
+                    name, desc = cmd_db["-aux"]
+                    results.append(FlagInfo(flag="ps -aux", name=name, description=desc))
+                else:
+                    for char in token[1:]:
+                        single_flag = f"-{char}"
+                        if single_flag in cmd_db:
+                            name, desc = cmd_db[single_flag]
+                            results.append(FlagInfo(flag=f"{current_cmd} {single_flag}", name=name, description=desc))
 
     return results
-
-
-def Path_name(token: str) -> str:
-    """Extract command name ignoring paths (e.g. /usr/bin/find -> find)."""
-    return token.split("/")[-1]

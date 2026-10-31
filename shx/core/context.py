@@ -15,10 +15,9 @@ def get_current_shell() -> str:
 
 
 def get_git_info(cwd: Path) -> Dict[str, Any]:
-    """Detect if cwd is inside a git repository."""
-    git_dir = cwd
+    """Detect if cwd is inside a git repository, submodule, or worktree."""
     for parent in [cwd] + list(cwd.parents):
-        if (parent / ".git").is_dir():
+        if (parent / ".git").exists():
             return {"is_git": True, "git_root": str(parent)}
     return {"is_git": False, "git_root": None}
 

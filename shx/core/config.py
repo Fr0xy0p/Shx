@@ -2,12 +2,17 @@
 
 import json
 import os
+import shutil
+import sys
+import tempfile
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
 from pydantic import BaseModel, Field
 
 DEFAULT_CONFIG_DIR = Path.home() / ".config" / "shx"
 DEFAULT_CONFIG_PATH = DEFAULT_CONFIG_DIR / "config.json"
+
+SUPPORTED_PROVIDERS: Tuple[str, ...] = ("gemini", "openai", "groq", "ollama")
 
 DEFAULT_MODELS = {
     "gemini": "gemini-2.5-flash",
@@ -33,12 +38,11 @@ class ShxConfig(BaseModel):
             "gemini": "GEMINI_API_KEY",
             "openai": "OPENAI_API_KEY",
             "groq": "GROQ_API_KEY",
-            "anthropic": "ANTHROPIC_API_KEY",
         }
         env_var = env_map.get(target)
         if env_var and os.getenv(env_var):
             return os.getenv(env_var)
-        
+
         # 2. Config file storage
         return self.api_keys.get(target)
 
@@ -47,18 +51,65 @@ class ShxConfig(BaseModel):
         return self.models.get(target, DEFAULT_MODELS.get(target, "gpt-4o-mini"))
 
 
-def load_config(config_path: Path = DEFAULT_CONFIG_PATH) -> ShxConfig:
-    """Load configuration from disk, creating defaults if not present."""
-    if not config_path.exists():
+def get_default_config_path() -> Path:
+    """Return default config path, honoring SHX_CONFIG_PATH environment variable override."""
+    env_override = os.environ.get("SHX_CONFIG_PATH")
+    if env_override:
+        return Path(env_override)
+    return DEFAULT_CONFIG_PATH
+
+
+def load_config(config_path: Optional[Path] = None) -> ShxConfig:
+    """Load configuration from disk, creating defaults if not present and backing up corrupted files."""
+    path = config_path or get_default_config_path()
+    if not path.exists():
         return ShxConfig()
     try:
-        data = json.loads(config_path.read_text(encoding="utf-8"))
+        content = path.read_text(encoding="utf-8")
+        data = json.loads(content)
         return ShxConfig(**data)
-    except Exception:
+    except Exception as e:
+        bak_path = path.with_name(path.name + ".bak")
+        try:
+            shutil.copyfile(path, bak_path)
+            if os.name == "posix":
+                os.chmod(bak_path, 0o600)
+        except Exception:
+            pass
+        print(
+            f"Warning: Corrupt configuration file at '{path}' ({e}). "
+            f"Backed up to '{bak_path}'. Falling back to defaults.",
+            file=sys.stderr,
+        )
         return ShxConfig()
 
 
-def save_config(config: ShxConfig, config_path: Path = DEFAULT_CONFIG_PATH) -> None:
-    """Save configuration to disk."""
-    config_path.parent.mkdir(parents=True, exist_ok=True)
-    config_path.write_text(config.model_dump_json(indent=2), encoding="utf-8")
+def save_config(config: ShxConfig, config_path: Optional[Path] = None) -> None:
+    """Atomically save configuration to disk with secure 0600 file permissions and 0700 dir permissions."""
+    path = config_path or get_default_config_path()
+    parent = path.parent
+    parent.mkdir(parents=True, exist_ok=True)
+    if os.name == "posix":
+        try:
+            os.chmod(parent, 0o700)
+        except OSError:
+            pass
+
+    content = config.model_dump_json(indent=2)
+    # Write to temp file in same directory and atomically replace
+    with tempfile.NamedTemporaryFile("w", dir=parent, delete=False, encoding="utf-8") as tf:
+        tf.write(content)
+        temp_name = tf.name
+
+    if os.name == "posix":
+        try:
+            os.chmod(temp_name, 0o600)
+        except OSError:
+            pass
+
+    os.replace(temp_name, path)
+    if os.name == "posix":
+        try:
+            os.chmod(path, 0o600)
+        except OSError:
+            pass

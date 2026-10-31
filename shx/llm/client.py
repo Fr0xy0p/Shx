@@ -1,13 +1,17 @@
 """Unified multi-provider LLM client supporting Gemini, OpenAI, Groq, and Ollama."""
 
 import json
-import os
 import re
 from typing import Dict, Any, Generator, Optional, List
 from pydantic import BaseModel, Field
 
-from shx.core.config import ShxConfig, load_config
+from shx.core.config import ShxConfig, load_config, SUPPORTED_PROVIDERS
 from shx.llm.prompts import build_translation_prompt, SYSTEM_EXPLAINER_PROMPT
+
+
+def strip_reasoning_blocks(text: str) -> str:
+    """Strip internal reasoning tags (<think>...</think>) from LLM outputs."""
+    return re.sub(r"(?is)<think>.*?</think>", "", text).strip()
 
 
 class FlagExplanation(BaseModel):
@@ -40,7 +44,8 @@ class LLMClient:
         provider = self.config.default_provider.lower()
 
         raw_text = self._generate_completion(provider, sys_prompt, user_msg)
-        return self._parse_suggestion_json(raw_text)
+        cleaned_text = strip_reasoning_blocks(raw_text)
+        return self._parse_suggestion_json(cleaned_text)
 
     def explain(self, command_or_output: str, is_error: bool = False) -> str:
         """Generate deep explanation of cryptic command flags or command output."""
@@ -50,7 +55,8 @@ class LLMClient:
         else:
             user_msg = f"Please explain this shell command in detail:\n```bash\n{command_or_output}\n```"
 
-        return self._generate_completion(provider, SYSTEM_EXPLAINER_PROMPT, user_msg)
+        raw_text = self._generate_completion(provider, SYSTEM_EXPLAINER_PROMPT, user_msg)
+        return strip_reasoning_blocks(raw_text)
 
     def stream_explanation(self, command_or_output: str, is_error: bool = False) -> Generator[str, None, None]:
         """Stream explanation chunks."""
@@ -69,7 +75,8 @@ class LLMClient:
         elif provider in ("openai", "groq", "ollama"):
             return self._call_openai_compatible(provider, system_prompt, user_prompt)
         else:
-            raise LLMError(f"Unsupported provider: '{provider}'. Supported: gemini, openai, groq, ollama.")
+            supported = ", ".join(SUPPORTED_PROVIDERS)
+            raise LLMError(f"Unsupported provider: '{provider}'. Supported: {supported}.")
 
     def _stream_completion(self, provider: str, system_prompt: str, user_prompt: str) -> Generator[str, None, None]:
         """Streaming completion dispatch."""
@@ -78,7 +85,8 @@ class LLMClient:
         elif provider in ("openai", "groq", "ollama"):
             yield from self._stream_openai_compatible(provider, system_prompt, user_prompt)
         else:
-            raise LLMError(f"Unsupported provider: '{provider}'.")
+            supported = ", ".join(SUPPORTED_PROVIDERS)
+            raise LLMError(f"Unsupported provider: '{provider}'. Supported: {supported}.")
 
     # ---- Google Gemini Provider ----
     def _call_gemini(self, system_prompt: str, user_prompt: str) -> str:
@@ -98,6 +106,8 @@ class LLMClient:
                 config={"system_instruction": system_prompt},
             )
             return response.text or ""
+        except LLMError:
+            raise
         except Exception as e:
             raise LLMError(f"Gemini API error: {str(e)}")
 
@@ -117,6 +127,8 @@ class LLMClient:
             for chunk in response_stream:
                 if chunk.text:
                     yield chunk.text
+        except LLMError:
+            raise
         except Exception as e:
             raise LLMError(f"Gemini stream error: {str(e)}")
 
@@ -132,8 +144,9 @@ class LLMClient:
         api_key = self.config.get_api_key(provider)
         if not api_key:
             env_name = f"{provider.upper()}_API_KEY"
+            display_name = "OpenAI" if provider == "openai" else provider.capitalize()
             raise LLMError(
-                f"{provider.capitalize()} API key not found.\n"
+                f"{display_name} API key not found.\n"
                 f"Set it via `export {env_name}='your-key'` or run `shx config`."
             )
 
@@ -143,8 +156,8 @@ class LLMClient:
         return OpenAI(api_key=api_key), model
 
     def _call_openai_compatible(self, provider: str, system_prompt: str, user_prompt: str) -> str:
+        client, model = self._get_openai_client(provider)
         try:
-            client, model = self._get_openai_client(provider)
             response = client.chat.completions.create(
                 model=model,
                 messages=[
@@ -154,12 +167,14 @@ class LLMClient:
                 temperature=0.1,
             )
             return response.choices[0].message.content or ""
+        except LLMError:
+            raise
         except Exception as e:
             raise LLMError(f"{provider.capitalize()} API error: {str(e)}")
 
     def _stream_openai_compatible(self, provider: str, system_prompt: str, user_prompt: str) -> Generator[str, None, None]:
+        client, model = self._get_openai_client(provider)
         try:
-            client, model = self._get_openai_client(provider)
             response_stream = client.chat.completions.create(
                 model=model,
                 messages=[
@@ -170,48 +185,71 @@ class LLMClient:
                 stream=True,
             )
             for chunk in response_stream:
+                if not chunk.choices:
+                    continue
                 delta = chunk.choices[0].delta
                 if delta and delta.content:
                     yield delta.content
+        except LLMError:
+            raise
         except Exception as e:
             raise LLMError(f"{provider.capitalize()} stream error: {str(e)}")
 
     # ---- JSON Extraction ----
     def _parse_suggestion_json(self, raw_text: str) -> CommandSuggestion:
-        """Extract and validate JSON response."""
-        cleaned = raw_text.strip()
+        """Extract and validate JSON response, rejecting invalid types or prose refusals."""
+        cleaned = strip_reasoning_blocks(raw_text).strip()
+
         # Remove Markdown code fences if present
         if cleaned.startswith("```"):
             cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
             cleaned = re.sub(r"\s*```$", "", cleaned)
             cleaned = cleaned.strip()
 
-        # Find first '{' and last '}'
         start = cleaned.find("{")
         end = cleaned.rfind("}")
         if start != -1 and end != -1:
-            cleaned = cleaned[start : end + 1]
+            candidate = cleaned[start: end + 1]
+            try:
+                data = json.loads(candidate)
+                if isinstance(data, dict):
+                    cmd_val = data.get("command")
+                    if isinstance(cmd_val, str) and cmd_val.strip():
+                        raw_breakdown = data.get("flags_breakdown") or []
+                        if isinstance(raw_breakdown, list) and all(isinstance(item, dict) for item in raw_breakdown):
+                            breakdown = [
+                                FlagExplanation(flag=item.get("flag", ""), description=item.get("description", ""))
+                                for item in raw_breakdown
+                            ]
+                            return CommandSuggestion(
+                                command=cmd_val.strip(),
+                                summary=str(data.get("summary") or ""),
+                                flags_breakdown=breakdown,
+                                notes=str(data.get("notes") or ""),
+                                raw_response=raw_text,
+                            )
+            except Exception:
+                pass
 
-        try:
-            data = json.loads(cleaned)
-            breakdown = [
-                FlagExplanation(flag=item.get("flag", ""), description=item.get("description", ""))
-                for item in data.get("flags_breakdown", [])
-            ]
-            return CommandSuggestion(
-                command=data.get("command", "").strip(),
-                summary=data.get("summary", ""),
-                flags_breakdown=breakdown,
-                notes=data.get("notes", ""),
-                raw_response=raw_text,
-            )
-        except Exception:
-            # Fallback parsing: if model returned command as raw text
-            first_line = raw_text.strip().split("\n")[0]
-            first_line = re.sub(r"^`+|`+$", "", first_line).strip()
-            return CommandSuggestion(
-                command=first_line,
-                summary="Synthesized shell command",
-                flags_breakdown=[],
-                raw_response=raw_text,
-            )
+        # Fallback parsing: only allow single clean line that is not prose and not broken JSON
+        non_empty = [l.strip() for l in cleaned.splitlines() if l.strip()]
+        if len(non_empty) == 1:
+            single = non_empty[0]
+            if single.startswith("```") and single.endswith("```"):
+                single = single[3:-3].strip()
+            single = re.sub(r"^`+|`+$", "", single).strip()
+            if not (single.startswith("{") or single.startswith("[")):
+                prose_starters = (
+                    "i am", "i cannot", "i can't", "sorry",
+                    "here is", "as an ai", "sure", "certainly"
+                )
+                if not single.lower().startswith(prose_starters):
+                    return CommandSuggestion(
+                        command=single,
+                        summary="Synthesized shell command",
+                        flags_breakdown=[],
+                        notes="",
+                        raw_response=raw_text,
+                    )
+
+        raise LLMError("Model returned an unparseable response")

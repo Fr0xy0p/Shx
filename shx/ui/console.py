@@ -1,8 +1,8 @@
 """Rich terminal UI formatting, badges, panels, and interactive menus."""
 
-import sys
 from typing import List, Optional
 from rich.console import Console
+from rich.markup import escape
 from rich.panel import Panel
 from rich.syntax import Syntax
 from rich.table import Table
@@ -65,8 +65,8 @@ def render_command_card(
             sev_color = "red" if v.severity in (RiskLevel.CRITICAL, RiskLevel.DANGEROUS) else "yellow"
             violation_table.add_row(
                 f"[{sev_color}]{v.severity.value}[/{sev_color}]",
-                v.rule_id,
-                f"{v.message}\n[dim italic]{v.rationale}[/dim italic]",
+                escape(v.rule_id),
+                f"{escape(v.message)}\n[dim italic]{escape(v.rationale)}[/dim italic]",
             )
         console.print(violation_table)
 
@@ -77,24 +77,24 @@ def render_command_card(
         flag_table.add_column("Flag / Token", style="bold green", width=20)
         flag_table.add_column("Function", style="white")
         for f in flags_breakdown:
-            flag_table.add_row(f.flag, f.description)
+            flag_table.add_row(escape(f.flag), escape(f.description))
         console.print(flag_table)
 
     # Notes or safety tip
     if notes:
         console.print()
-        console.print(f"[dim]Tip: {notes}[/dim]")
+        console.print(f"[dim]Tip: {escape(notes)}[/dim]")
 
     console.print()
 
 
 def render_safety_report(report: RiskReport) -> None:
-    """Render audit report for `shx check` command."""
+    """Render audit report for `shx check` command with escaped markup."""
     console.print()
     badge = get_risk_badge(report.level, report.score)
 
-    console.print(f"[bold]Target Command:[/bold] [italic cyan]{report.command}[/italic cyan]")
-    console.print(f"[bold]Risk Assessment:[/bold] ", end="")
+    console.print(f"[bold]Target Command:[/bold] [italic cyan]{escape(report.command)}[/italic cyan]")
+    console.print("[bold]Risk Assessment:[/bold] ", end="")
     console.print(badge)
     console.print(f"[bold]AST Parsed Successfully:[/bold] {'[green]Yes[/green]' if report.ast_parsed else '[yellow]No (Fallback Shlex Used)[/yellow]'}")
     console.print(f"[bold]Execution Status:[/bold] {'[red]BLOCKED[/red]' if report.is_blocked else '[green]ALLOWED[/green]'}")
@@ -108,7 +108,11 @@ def render_safety_report(report: RiskReport) -> None:
 
         for v in report.violations:
             sev_color = "red" if v.severity in (RiskLevel.CRITICAL, RiskLevel.DANGEROUS) else "yellow"
-            table.add_row(f"[{sev_color}]{v.severity.value}[/{sev_color}]", v.rule_id, f"{v.message}\n[dim]{v.rationale}[/dim]")
+            table.add_row(
+                f"[{sev_color}]{v.severity.value}[/{sev_color}]",
+                escape(v.rule_id),
+                f"{escape(v.message)}\n[dim]{escape(v.rationale)}[/dim]",
+            )
         console.print(table)
     else:
         console.print("\n[green]No dangerous patterns detected. Command is safe to execute.[/green]")
@@ -124,18 +128,21 @@ def render_markdown_explanation(markdown_text: str) -> None:
 
 
 def prompt_action(report: RiskReport) -> str:
-    """Display interactive action prompt and return user's choice."""
+    """Display interactive action prompt with safe default behavior and unambiguous hotkeys."""
     if report.is_blocked:
         console.print("[bold red]This command is BLOCKED by safety guardrails due to critical risks.[/bold red]")
-        prompt_text = "[bold][C]opy to clipboard | [E]xplain | [A]bort[/bold] (default: Abort): "
-        allowed = {"c", "e", "a", ""}
+        prompt_text = "[bold][C]opy to clipboard | [Ex]plain | [A]bort[/bold] (default: Abort): "
+        allowed = {"c", "copy", "ex", "explain", "x", "a", "abort", "q", ""}
+        default_action = "a"
     elif report.level == RiskLevel.DANGEROUS:
         console.print("[bold yellow]WARNING: High-risk command detected. Please verify before running.[/bold yellow]")
-        prompt_text = "[bold][E]xecute | [C]opy | [Ex]plain | [M]odify | [A]bort[/bold] (default: Execute): "
-        allowed = {"e", "c", "ex", "m", "a", ""}
+        prompt_text = "[bold][E]xecute | [C]opy | [Ex]plain | [M]odify | [A]bort[/bold] (default: Abort): "
+        allowed = {"e", "execute", "c", "copy", "ex", "explain", "x", "m", "modify", "a", "abort", "q", ""}
+        default_action = "a"
     else:
         prompt_text = "[bold][E]xecute | [C]opy | [Ex]plain | [M]odify | [A]bort[/bold] (default: Execute): "
-        allowed = {"e", "c", "ex", "m", "a", ""}
+        allowed = {"e", "execute", "c", "copy", "ex", "explain", "x", "m", "modify", "a", "abort", "q", ""}
+        default_action = "e"
 
     try:
         user_input = console.input(prompt_text).strip().lower()
@@ -144,5 +151,9 @@ def prompt_action(report: RiskReport) -> str:
         return "a"
 
     if not user_input:
-        return "a" if report.is_blocked else "e"
+        return default_action
+
+    if user_input not in allowed:
+        return user_input
+
     return user_input

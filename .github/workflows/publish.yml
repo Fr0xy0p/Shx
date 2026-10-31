@@ -6,8 +6,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
-    name: Build distribution package
+  test:
+    name: Run test suite before build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -16,6 +16,44 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: pyproject.toml
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[test]"
+
+      - name: Run tests
+        run: pytest -v
+
+  build:
+    name: Build distribution package
+    needs: [test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Verify release tag matches pyproject version
+        if: github.event_name == 'release'
+        run: |
+          TAG_NAME="${{ github.ref_name }}"
+          VERSION="${TAG_NAME#v}"
+          PYPROJECT_VERSION=$(python -c '
+          import tomllib
+          with open("pyproject.toml", "rb") as f:
+              print(tomllib.load(f)["project"]["version"])
+          ')
+          if [ "$VERSION" != "$PYPROJECT_VERSION" ]; then
+            echo "Error: Release tag ($TAG_NAME -> $VERSION) does not match pyproject.toml version ($PYPROJECT_VERSION)"
+            exit 1
+          fi
+          echo "Version check passed: $VERSION == $PYPROJECT_VERSION"
 
       - name: Install build tools
         run: |
@@ -39,6 +77,7 @@ jobs:
   publish-to-pypi:
     name: Publish to PyPI
     needs: [build]
+    if: github.event_name == 'release'
     runs-on: ubuntu-latest
     environment:
       name: pypi
@@ -55,4 +94,3 @@ jobs:
 
       - name: Publish package to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
-

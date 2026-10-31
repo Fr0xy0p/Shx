@@ -45,13 +45,16 @@ SAFE_COMMANDS = {
     "du", "df", "free", "uptime", "uname", "whoami", "id",
     "ps", "top", "htop", "which", "whereis", "type", "man",
     "git status", "git log", "git diff", "git show", "git branch",
-    "date", "cal", "env", "printenv", "history", "curl -I",
+    "date", "cal", "printenv", "history",
 }
 
 # Critical system directories that must never be wiped or modified recursively
 CRITICAL_SYSTEM_PATHS = {
     "/", "/*", "/bin", "/boot", "/dev", "/etc", "/lib", "/lib64",
     "/root", "/sbin", "/sys", "/usr", "/usr/bin", "/usr/sbin",
-    "/usr/local", "/var", "/Library", "/System", "/Applications",
-    "~", "~/", "$HOME", "$HOME/",
+    "/usr/local", "/usr/lib", "/usr/share", "/var", "/var/lib",
+    "/home", "/Users", "/opt", "/mnt", "/media", "/srv",
+    "/Volumes", "/private", "/proc", "/run",
+    "/Library", "/System", "/Applications",
+    "~", "~/", "$HOME", "$HOME/", "${HOME}", "${HOME}/",
 }
