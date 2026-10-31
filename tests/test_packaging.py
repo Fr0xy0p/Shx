@@ -18,3 +18,4 @@ def test_every_python_dir_has_init():
                     missing_init.append(str(path))
                     
     assert not missing_init, f"Directories with .py files missing __init__.py: {missing_init}"
+

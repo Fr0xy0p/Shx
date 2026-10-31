@@ -36,3 +36,4 @@ def test_non_git_directory(tmp_path):
     info = get_git_info(plain)
     assert info["is_git"] is False
     assert info["git_root"] is None
+

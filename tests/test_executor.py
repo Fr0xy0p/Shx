@@ -44,3 +44,4 @@ def test_execute_keyboard_interrupt(monkeypatch, tmp_path):
     code = execute_command_interactive("sleep 100")
     assert code == 130
     assert get_last_history_command() == "sleep 100"
+
