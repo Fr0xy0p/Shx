@@ -28,10 +28,12 @@ def get_system_context() -> Dict[str, Any]:
     sys_name = platform.system()
     distro = platform.platform(terse=True)
     
-    # List top files/directories in current path (max 15 for prompt efficiency)
+    # List top files/directories in current path (prioritize visible dirs and files, up to 30)
     sample_files = []
     try:
-        sample_files = [p.name for p in list(cwd.iterdir())[:15]]
+        entries = list(cwd.iterdir())
+        entries.sort(key=lambda p: (p.name.startswith("."), not p.is_dir(), p.name.lower()))
+        sample_files = [p.name for p in entries[:30]]
     except Exception:
         pass
 

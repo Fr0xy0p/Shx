@@ -94,6 +94,20 @@ If your terminal says `shx: command not found` after installing:
   ln -sf $(pwd)/.venv/bin/shx ~/.local/bin/shx
   ```
 
+### Shell Integration (Directory Navigation & Environment Changes)
+
+In Unix and macOS, an external command-line program runs as a child process and cannot alter the parent terminal's working directory (`cd`) or environment (`export`) directly. 
+
+To enable seamless terminal navigation when running `shx "navigate into folder"`:
+```bash
+# One-click setup (adds integration to ~/.zshrc or ~/.bashrc)
+shx setup
+
+# Or manually add to ~/.zshrc:
+eval "$(shx init zsh)"
+```
+Then run `source ~/.zshrc` (or restart your terminal). Now executing `cd` commands inside `shx` will navigate your terminal directly into that directory!
+
 ---
 
 ## Configuration

@@ -124,3 +124,60 @@ def test_explain_llm_failure(monkeypatch):
     # When explaining command with local flags, show local table and warning
     res_local = runner.invoke(app, ["explain", "tar -xzvf a.tgz"])
     assert "Warning: AI explanation unavailable" in res_local.stdout
+
+
+def test_cli_init_command():
+    res_zsh = runner.invoke(app, ["init", "zsh"])
+    assert res_zsh.exit_code == 0
+    assert "shx()" in res_zsh.stdout
+    assert 'eval "$cmd"' in res_zsh.stdout
+
+    res_bash = runner.invoke(app, ["init", "bash"])
+    assert res_bash.exit_code == 0
+    assert "history -s" in res_bash.stdout
+
+
+def test_cli_setup_command(tmp_path, monkeypatch):
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    res = runner.invoke(app, ["setup"])
+    assert res.exit_code == 0
+    assert "Successfully installed shell integration" in res.stdout or "already installed" in res.stdout
+
+
+def test_cli_run_handoff_with_shx_cmd_file(tmp_path, monkeypatch):
+    from shx.llm.client import CommandSuggestion
+
+    cmd_file = tmp_path / "cmd_handoff.txt"
+    monkeypatch.setenv("SHX_CMD_FILE", str(cmd_file))
+
+    def fake_translate(*args, **kwargs):
+        return CommandSuggestion(
+            command="cd ~/CodeForces",
+            summary="Navigate to CodeForces",
+            flags_breakdown=[],
+        )
+
+    monkeypatch.setattr(LLMClient, "translate", fake_translate)
+    res = runner.invoke(app, ["run", "navigate into CodeForces folder"], input="e\n")
+    assert res.exit_code == 0
+    assert cmd_file.exists()
+    assert cmd_file.read_text(encoding="utf-8") == "cd ~/CodeForces"
+
+
+def test_cli_run_standalone_cd_warning(monkeypatch):
+    from shx.llm.client import CommandSuggestion
+
+    monkeypatch.delenv("SHX_CMD_FILE", raising=False)
+
+    def fake_translate(*args, **kwargs):
+        return CommandSuggestion(
+            command="cd ~/CodeForces",
+            summary="Navigate to CodeForces",
+            flags_breakdown=[],
+        )
+
+    monkeypatch.setattr(LLMClient, "translate", fake_translate)
+    res = runner.invoke(app, ["run", "navigate into CodeForces folder"], input="e\n")
+    assert res.exit_code == 0
+    assert "Shell Navigation Notice" in res.stdout
+    assert "shx init --install" in res.stdout

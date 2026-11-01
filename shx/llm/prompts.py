@@ -54,7 +54,7 @@ def build_translation_prompt(query: str, context: Dict[str, Any]) -> Tuple[str, 
     git_info = context.get("git", {})
     is_git_str = "Yes (root: " + str(git_info.get("git_root")) + ")" if git_info.get("is_git") else "No"
 
-    raw_samples = context.get("directory_sample", [])[:10]
+    raw_samples = context.get("directory_sample", [])[:25]
     sanitized = []
     for name in raw_samples:
         clean_name = re.sub(r"[\x00-\x1f\x7f-\x9f\n\r\t]", " ", str(name)).strip()[:60]

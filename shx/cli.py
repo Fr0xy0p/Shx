@@ -1,6 +1,9 @@
 """Command-line interface entrypoints for shx."""
 
+import os
+import platform
 import sys
+from pathlib import Path
 from typing import Optional, List
 import typer
 from rich.prompt import Prompt
@@ -22,6 +25,10 @@ from shx.core.executor import (
     execute_command_interactive,
     copy_to_clipboard,
     get_last_history_command,
+    log_command_history,
+    is_shell_state_command,
+    get_shell_init_script,
+    install_shell_integration,
 )
 from shx.llm.client import LLMClient, LLMError, FlagExplanation
 from shx.ui.console import (
@@ -101,6 +108,26 @@ def _handle_run_query(query: str):
     # If require_confirmation is False and command is SAFE, execute without prompt
     if not config.require_confirmation and report.level == RiskLevel.SAFE and not report.is_blocked:
         console.print(f"\n[dim]Auto-executing (require_confirmation=False):[/dim] [cyan]{escape(cmd)}[/cyan]\n")
+        cmd_file = os.environ.get("SHX_CMD_FILE")
+        if cmd_file:
+            try:
+                Path(cmd_file).write_text(cmd, encoding="utf-8")
+                log_command_history(cmd, exit_code=0)
+                sys.exit(0)
+            except Exception:
+                pass
+
+        if is_shell_state_command(cmd):
+            copy_to_clipboard(cmd)
+            log_command_history(cmd, exit_code=0)
+            console.print(
+                "[bold yellow]⚠ Shell Navigation Notice:[/bold yellow] "
+                "In Unix/macOS, a child process cannot directly change your parent terminal's working directory.\n"
+            )
+            console.print("[bold green]✔ Command copied to clipboard![/bold green] Press [bold]Cmd+V[/bold] and [bold]Enter[/bold] to run.\n")
+            console.print("Run [bold green]shx init --install[/bold green] to enable automatic navigation.\n")
+            sys.exit(0)
+
         exit_code = execute_command_interactive(cmd)
         sys.exit(exit_code)
 
@@ -121,6 +148,37 @@ def _handle_run_query(query: str):
                 if typed.strip().lower() != "yes":
                     console.print("[yellow]Execution cancelled.[/yellow]")
                     continue
+
+            # Check if shell wrapper is active via handoff file
+            cmd_file = os.environ.get("SHX_CMD_FILE")
+            if cmd_file:
+                try:
+                    Path(cmd_file).write_text(cmd, encoding="utf-8")
+                    console.print(f"\n[dim]Running:[/dim] [cyan]{escape(cmd)}[/cyan]\n")
+                    log_command_history(cmd, exit_code=0)
+                    sys.exit(0)
+                except Exception as e:
+                    console.print(f"[yellow]Warning: Could not hand off command to shell: {escape(str(e))}[/yellow]")
+
+            # If standalone and command alters shell state (e.g. cd, source, export)
+            if is_shell_state_command(cmd):
+                copy_to_clipboard(cmd)
+                log_command_history(cmd, exit_code=0)
+                console.print(f"\n[dim]Running:[/dim] [cyan]{escape(cmd)}[/cyan]\n")
+                console.print(
+                    "[bold yellow]⚠ Shell Navigation Notice:[/bold yellow] "
+                    "In Unix/macOS, an external process cannot directly change your parent terminal's working directory.\n"
+                )
+                console.print(
+                    "[bold green]✔ Command copied to clipboard![/bold green] "
+                    "Press [bold]Cmd+V[/bold] (or [bold]Ctrl+Shift+V[/bold]) and [bold]Enter[/bold] to navigate right now.\n"
+                )
+                console.print(
+                    "[bold cyan]To enable automatic directory navigation for future commands:[/bold cyan]\n"
+                    "  Run: [bold green]shx init --install[/bold green]\n"
+                    "  (or add [italic]'eval \"$(shx init zsh)\"'[/italic] to your ~/.zshrc)\n"
+                )
+                sys.exit(0)
 
             console.print(f"\n[dim]Running:[/dim] [cyan]{escape(cmd)}[/cyan]\n")
             exit_code = execute_command_interactive(cmd)
@@ -391,6 +449,42 @@ def system_info():
     console.print(table)
 
 
+@app.command("init")
+def shell_init(
+    shell: Optional[str] = typer.Argument(None, help="Target shell: zsh, bash, or fish (auto-detected if omitted)"),
+    install: bool = typer.Option(False, "--install", "-i", help="Automatically install shell integration into ~/.zshrc or ~/.bashrc"),
+):
+    """Generate or install shell integration script for seamless directory navigation and environment changes."""
+    if not shell:
+        shell_env = os.environ.get("SHELL", "")
+        shell = Path(shell_env).name if shell_env else ("zsh" if platform.system() == "Darwin" else "bash")
+
+    if install:
+        success, msg = install_shell_integration(shell)
+        if success:
+            console.print(f"[bold green]✔ {msg}[/bold green]")
+        else:
+            console.print(f"[bold red]Error: {msg}[/bold red]")
+            raise typer.Exit(1)
+        return
+
+    script = get_shell_init_script(shell)
+    print(script, end="")
+
+
+@app.command("setup")
+def setup_shell():
+    """One-click setup for shx terminal integration (directory navigation and history)."""
+    shell_env = os.environ.get("SHELL", "")
+    shell = Path(shell_env).name if shell_env else ("zsh" if platform.system() == "Darwin" else "bash")
+    success, msg = install_shell_integration(shell)
+    if success:
+        console.print(f"[bold green]✔ {msg}[/bold green]")
+    else:
+        console.print(f"[bold red]Error: {msg}[/bold red]")
+        raise typer.Exit(1)
+
+
 def main():
     """Main CLI entry point for console_scripts."""
     known_commands = {
@@ -399,6 +493,8 @@ def main():
         "check",
         "config",
         "info",
+        "init",
+        "setup",
         "--help",
         "-h",
         "--version",
