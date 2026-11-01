@@ -32,19 +32,22 @@
 pipx install shx-cli
 
 # Or install directly from GitHub
-pipx install git+https://github.com/<your-username>/shx.git
+pipx install git+https://github.com/Fr0xy0p/Shx.git
 ```
 
 ### Option 2: Standard pip Install
 ```bash
 pip install shx-cli
+
+# Or directly from GitHub
+pip install git+https://github.com/Fr0xy0p/Shx.git
 ```
 
 ### Option 3: Local Development
 ```bash
 # Clone and navigate to workspace
-git clone https://github.com/<your-username>/shx.git
-cd shx
+git clone https://github.com/Fr0xy0p/Shx.git
+cd Shx
 
 # Setup virtual environment
 python3 -m venv .venv
@@ -56,7 +59,49 @@ pip install -e .
 
 ---
 
+## Updating to the Latest Version
+
+If you already have `shx` installed (e.g. `v0.1.0`) and want to update to the latest release:
+
+```bash
+# If installed via pipx:
+pipx upgrade shx-cli
+# Or if installed from GitHub via pipx:
+pipx install --force git+https://github.com/Fr0xy0p/Shx.git
+
+# If installed via standard pip:
+pip install --upgrade shx-cli
+# Or if installed from GitHub via pip:
+pip install --upgrade git+https://github.com/Fr0xy0p/Shx.git
+
+# If running from a local git clone:
+git pull origin main
+pip install -e .
+```
+
+Verify your installed version:
+```bash
+shx --version
+```
+
+### Troubleshooting: `shx: command not found`
+
+If your terminal says `shx: command not found` after installing:
+- **With `pipx`**: Run `pipx ensurepath` to add `~/.local/bin` to your shell's `$PATH`, then restart your terminal.
+- **With `pip`**: Ensure Python's user bin directory (`~/.local/bin` or `~/Library/Python/3.x/bin`) is in your `$PATH`.
+- **With a local venv**: Ensure your virtual environment is active (`source .venv/bin/activate`), or symlink the executable globally:
+  ```bash
+  ln -sf $(pwd)/.venv/bin/shx ~/.local/bin/shx
+  ```
+
+---
+
 ## Configuration
+
+> [!IMPORTANT]
+> **Bring Your Own API Key**: `shx` does not bundle private API keys. To generate commands using cloud providers, you must supply your own API key for **Google Gemini**, **Groq**, or **OpenAI**. 
+>
+> If you prefer not to use an API key, you can run `shx` completely free and offline by pointing it to **Ollama** with local models.
 
 Set your preferred provider and API keys:
 
