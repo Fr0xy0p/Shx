@@ -15,7 +15,7 @@ DEFAULT_CONFIG_PATH = DEFAULT_CONFIG_DIR / "config.json"
 SUPPORTED_PROVIDERS: Tuple[str, ...] = ("gemini", "openai", "groq", "ollama")
 
 DEFAULT_MODELS = {
-    "gemini": "gemini-2.5-flash",
+    "gemini": "gemini-3.8-flash",
     "openai": "gpt-4o-mini",
     "groq": "qwen/qwen3.8-27b",
     "ollama": "llama3.2",

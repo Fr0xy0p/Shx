@@ -4,6 +4,7 @@ import io
 from typer.testing import CliRunner
 from rich.console import Console
 
+import shx
 from shx.cli import app
 from shx.core.safety.rules import RiskReport, RiskLevel
 from shx.ui.console import prompt_action, render_safety_report
@@ -15,11 +16,11 @@ runner = CliRunner()
 def test_cli_version():
     res1 = runner.invoke(app, ["--version"])
     assert res1.exit_code == 0
-    assert "shx version 0.1.0" in res1.stdout
+    assert f"shx version {shx.__version__}" in res1.stdout
 
     res2 = runner.invoke(app, ["-V"])
     assert res2.exit_code == 0
-    assert "shx version 0.1.0" in res2.stdout
+    assert f"shx version {shx.__version__}" in res2.stdout
 
 
 def test_cli_help_flags():
